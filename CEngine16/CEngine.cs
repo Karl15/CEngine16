@@ -9,194 +9,155 @@ using System.Globalization;
 namespace CEngine16
 {
     public class CEngine
-    { 
-            public CEngine()
-            {
-                //Parser vP = new Parser();
-            }
-            public void ipl(ListBox lBin, List<uint> mem, List<Parser.Cvbl> cVin)
-            {
-                AdrCtl aC = new AdrCtl();
-                aC.vbls = new VRam();
-                foreach (Parser.Cvbl v in cVin)
-                    aC.vbls.vbls.Add(v.val);
-                aC.cV = cVin;
-                mem.Add(0);
-                aC.sCwA = new CtlRom(mem);
+    {   // Form1.load calls ipl mem contains micro cwds, Cvbl has type name and value
+        public void ipl(ListBox lBin, List<uint> mem, List<Parser.Cvbl> cVin)
+        {
+            AdrCtl aC = new AdrCtl();   // AdrCtl generates memory block addresses for exe
+            aC.vbls = new VRam();   // Type values used in exe
+            foreach (Parser.Cvbl v in cVin)
+                aC.vbls.vbls.Add(v.val);    // may need to add non int types
+            aC.cV = cVin;
+            mem.Add(0); // nop pad to prevent out of range exception -- Unnecessary???
+            aC.sCwA = new CtlRom(mem);  // maybe unnecessary if mem is used
             aC.sCwA.srom.Capacity = 256;
-                aC.sCwA.srom.AddRange(mem.ToArray());
+            aC.sCwA.srom.AddRange(mem.ToArray());   // makes chip memory size a power of two for build
 
-                aC.sCwA.srom.Add(0);
-                aC.sCwA.srom.Add(0);
-                //aC.sCws = new CSrom(cas);
-                //aC.oCws = new CSrom(ccs);
-                aC.vbls.vbls.Capacity = 256;
-                while (aC.vbls.vbls.Count < aC.vbls.vbls.Capacity)
-                    aC.vbls.vbls.Add(0);
+            aC.sCwA.srom.Add(0);    // nop padding to prevent out of range exception  -- Unnecessary???
+            aC.sCwA.srom.Add(0);
+            aC.vbls.vbls.Capacity = 256;    // need to calculate for stack size
+            while (aC.vbls.vbls.Count < aC.vbls.vbls.Capacity)
+                aC.vbls.vbls.Add(0);
+            aC.Alu.ac = aC; // in case Alu needs an aC field
+            lBin.Items.Add("Starting");
+            aC.pec0();  // executes and formats cycle activity listBox
+            foreach (string s in aC.lB1)    // maybe pass lBin to aC ??? TBD
+                lBin.Items.Add(s);
+        }
 
-                //      Stack<int> iStk = new Stack<int>(aC.vbls.vbls.ToArray());
-                aC.Alu.ac = aC;
-                //ftch ocw, op2@, op1@;  load ocwReg, nxt@; ftch op1,op2, wrt TOS, fth ocw, op2@;  rd nxtOp, TOS
+        public class AdrCtl
+        {
+            public List<string> lB1 = new List<string>();   // need constructor to ref callers objects
+            public List<Parser.Cvbl> cV;
+            public StkRam cStk = new StkRam(new uint[64]);
+            public VRam vbls;
+            public CtlRom sCwA;
+            public alu Alu = new alu();
 
+            //string[] ixf1, ixf2;
+            //int ix1, ix2;
+            //char[] bkts = new char[] { '[', ']' };
+            //uint[] nMsk = new uint[33]  {0x0000, 0x0001, 0x0003, 0x0007, 0x000f,
+            //                                   0x001f, 0x003f, 0x007f, 0x00ff,
+            //                                   0x01ff, 0x03ff, 0x07ff, 0x0fff,
+            //                                   0x1fff, 0x3fff, 0x7fff, 0xffff,
+            //                                   0x0001ffff, 0x0003ffff, 0x0007ffff, 0x000fffff,
+            //                                   0x001fffff, 0x003fffff, 0x007fffff, 0x00ffffff,
+            //                                   0x01ffffff, 0x03ffffff, 0x07ffffff, 0x0fffffff,
+            //                                   0x1fffffff, 0x3fffffff, 0x7fffffff, 0xffffffff};
 
+            //uint mk_fld(string fld, out string[] ix)
+            //{
+            //    ix = fld.Trim().Split(bkts, StringSplitOptions.RemoveEmptyEntries);
+            //    xParse(ix[1], out ix1);
+            //    xParse(ix[2], out ix2);
+            //    uint nM1;
+            //    if (ix1 > ix2)
+            //    {
+            //        nM1 = nMsk[ix1 - ix2 + 1];
+            //        return (nM1 <<= ix2);
+            //    }
+            //    else
+            //    {
+            //        nM1 = nMsk[ix2 - ix1 + 1];
+            //        return (nM1 <<= ix1);
+            //        }
+            //    }
 
-                lBin.Items.Add("Starting");
-
-                //cVin.Reverse();
-                //cVin.Add(cVin[4]);
-                aC.pec0();
-                foreach (string s in aC.lB1)
-                    lBin.Items.Add(s);
+            private bool xParse(string src, out int xval)
+            {
+                if (src.Length > 2 && (src[1] == 'x' || src[1] == 'X'))
+                {
+                    if (!Int32.TryParse(src.Substring(2), NumberStyles.HexNumber, null, out xval))
+                    {
+                        MessageBox.Show("num Parse error");
+                        return false;
+                    }
+                }
+                else
+                {
+                    if (!Int32.TryParse(src, out xval))
+                    {
+                        MessageBox.Show("num Parse error");
+                        return false;
+                    }
+                }
+                return true;
             }
 
-            public class AdrCtl
+            //_|c0|_______________|c0|________________|c0|_______________|c0|_______________|c0|___
+            //                    sCwA[2]                                eop ? sCwA[cwCt.qb] : 0
+            //                    sCwB[0]              sCwB[cStk.qb + 1] eop ? 0 : sCwB[cStk.qb + 1] 
+            //                                         va[sCwA.qa]       pway ? pway@ 
+            //                                                            : etime ? cStk.qa
+            //                                         vb[pop ? cStk.qa
+            //                                          : etime ? sCwA.qb 
+            //                                           : sCwA.qb]                            
+            //                    cwCt.qa = 2		   cwCtA = cwCt.qa + 1 
+
+            void nxtV(bool etime, bool eop, bool pway, bool tna, bool fna, bool gtr, bool eql, bool less, bool push, bool pop, bool call, bool rtn)
+                {
+                }
+
+            public void pec0()
             {
-                public List<string> lB1 = new List<string>();
-                List<string> cwOps = new List<string>();
-                public List<Parser.Cvbl> cV;
-                public StkRam cStk = new StkRam(new uint[64]);
-                public VRam vbls;
-                public CtlRom sCwA;
-                public alu Alu = new alu();
+                // initialize call stack
+                cStk.adra = 0;
+                cStk.wrena = true;
+                cStk.adrb = 1;
+                cStk.wrenb = true;
+                cStk.dina = ((uint)vbls.vbls.Capacity - 1);
+                cStk.dinb = 0;
+                cStk.clka();    // clock stack memory to initialize -- 
+                cStk.clkb();
 
-                //void always(VRam ram, string fld, uint val)
-                //{
-                //    string typ = ram.GetType().ToString();
-                //    switch (fld)
-                //    {
-                //        case "adra":
-                //            ram.adra = val;
-                //            break;
-                //    }
-                //    string mref = ram.ToString();
-                //}
-
-                string[] ixf1, ixf2;
-                int ix1, ix2;
-                char[] bkts = new char[] { '[', ']' };
-                uint[] nMsk = new uint[33]  {0x0000, 0x0001, 0x0003, 0x0007, 0x000f,
-                                               0x001f, 0x003f, 0x007f, 0x00ff,
-                                               0x01ff, 0x03ff, 0x07ff, 0x0fff,
-                                               0x1fff, 0x3fff, 0x7fff, 0xffff,
-                                               0x0001ffff, 0x0003ffff, 0x0007ffff, 0x000fffff,
-                                               0x001fffff, 0x003fffff, 0x007fffff, 0x00ffffff,
-                                               0x01ffffff, 0x03ffffff, 0x07ffffff, 0x0fffffff,
-                                               0x1fffffff, 0x3fffffff, 0x7fffffff, 0xffffffff};
-
-                uint mk_fld(string fld, out string[] ix)
+                // start execution 
+                int cycle = 0;
+                uint callPtr = 0;
+                string fmt;
+                while (lB1.Count < 200) // limit execution to 200 logs
                 {
-                    ix = fld.Trim().Split(bkts, StringSplitOptions.RemoveEmptyEntries);
-                    xParse(ix[1], out ix1);
-                    xParse(ix[2], out ix2);
-                    uint nM1;
-                    if (ix1 > ix2)
-                    {
-                        nM1 = nMsk[ix1 - ix2 + 1];
-                        return (nM1 <<= ix2);
-                    }
-                    else
-                    {
-                        nM1 = nMsk[ix2 - ix1 + 1];
-                        return (nM1 <<= ix1);
-                    }
-                }
+                    if (rtn && !call)   //  end of uCwds
+                        return;
+                    // nxtV does nothing, call makes the parm values visible
+                    // nxtV(etime, endop, pway, tjmp, fjmp, gtr, eql, less, push, pop, call, rtn);
+                    // callCt, base;  stkCt, cwCt;  callCt is the call stack ptr
 
-                private bool xParse(string src, out int xval)
-                {
-                    if (src.Length > 2 && (src[1] == 'x' || src[1] == 'X'))
-                    {
-                        if (!Int32.TryParse(src.Substring(2), NumberStyles.HexNumber, null, out xval))
-                        {
-                            MessageBox.Show("num Parse error");
-                            return false;
-                        }
-                    }
-                    else
-                    {
-                        if (!Int32.TryParse(src, out xval))
-                        {
-                            MessageBox.Show("num Parse error");
-                            return false;
-                        }
-                    }
-                    return true;
-                }
-
-                //_|c0|_______________|c0|________________|c0|_______________|c0|_______________|c0|___
-                //                    sCwA[2]                                eop ? sCwA[cwCt.qb] : 0
-                //                    sCwB[0]              sCwB[cStk.qb + 1] eop ? 0 : sCwB[cStk.qb + 1] 
-                //                                         va[sCwA.qa]       pway ? pway@ 
-                //                                                            : etime ? cStk.qa
-                //                                         vb[pop ? cStk.qa
-                //                                          : etime ? sCwA.qb 
-                //                                           : sCwA.qb]                            
-                //                    cwCt.qa = 2		   cwCtA = cwCt.qa + 1 
-
-                void nxtV(bool etime, bool eop, bool pway, bool tna, bool fna, bool gtr, bool eql, bool less, bool push, bool pop, bool call, bool rtn)
-                {
-                    //vadra = (pop ? (cStk.qa + 1) : 0)
-                    //        | ((etime && !pway) || (pway && call) ? cStk.qa : 0)
-                    //        | ((pway && !call) ? sCwA.qb & 0xffff : 0)
-                    //        | ((!etime && !pway && !call) ? sCwA.qa >> 16 : 0);
-                    //vadrb = (UInt16)((pop ? cStk.qa : 0)
-                    //        | ((etime || call) && !endop ? sCwA.qb : 0)
-                    //        | ((etime || call) && endop ? sCwA.qa : 0));
-                    //sadra = (UInt16)((!etime && !eop ? (cStk.qb == 0 ? 2 : cStk.qb) : 0)
-                    //        | ((etime && (cmet || call) ? sCwA.qb : 0)
-                    //        | ((endop || push) ? (cStk.qb + 1) : 0)
-                    //        | (endop ? cStk.qb + 1 : 0)));
-                    //sadra = (UInt16)((!etime && !eop ? cStk.qb == 0 ? 2 : cStk.qb : 0)
-                    //        | (push ? cStk.qb + 1 : 0)
-                    //        | ((etime && (endop || push)) ? cmet || call ? (UInt16)sCwA.qb : (UInt16)(cStk.qb + 1) : 0)
-                    //        | (!etime && endop ? cStk.qb + 1 : 0));
-                    //sadrb = (UInt16)((etime && (endop || push)) ? 0 : cStk.qb + 1);
-
-                }
-
-                public void pec0()
-                {
-                    cStk.adra = 0;
-                    cStk.wrena = true;
-                    cStk.adrb = 1;
-                    cStk.wrenb = true;
-                    cStk.dina = ((uint)vbls.vbls.Capacity - 1);
-                    cStk.dinb = 0;
-                    cStk.clka();
-                    cStk.clkb();
-
-
-                    int cycle = 0;
-                    uint callPtr = 0;
-                    string fmt;
-                    while (lB1.Count < 200)
-                    {
-                        if (rtn && !call)
-                            return;
-                        //           nxtV(etime, endop, pway, tjmp, fjmp, gtr, eql, less, push, pop, call, rtn);
-                        // callCt, base;  stkCt, cwCt;  callCt is the call stack ptr
-                        vadra = pway ? (sCwA.qb & 0xffff) + (cStk.qb >> 16)
+                    // address calculation for operands
+                    vadra = pway ? (sCwA.qb & 0xffff) + (cStk.qb >> 16)
                             : !etime && !call ? (sCwA.qa >> 16) + (cStk.qb >> 16)
                             : etime && call ? cStk.qa
                             : pop ? cStk.qa + 1
                             : etime ? cStk.qa : 0;
-                        vadrb = pop ? cStk.qa
-                            : (etime || call) && !endop ? sCwA.qb + (cStk.qb >> 16)
-                            : (!etime && !call) || endop ? (sCwA.qa & 0xffff) + (cStk.qb >> 16) : 0;
-                        sadra = (UInt16)(!etime && !endop ? (cStk.qb & 0xffff) == 0 ? 2 : cStk.qb + 1
-                            : etime ? (cmet || call && endop && !rtn) ? sCwA.qb
-                            : (endop || push) ? call ? 0 : (cStk.qb + 1) : 0 : cStk.qb + 1);
-                        sadrb = (UInt16)(etime && endop || push && !call || !etime && pway ? 0 : cStk.qb + 1);
+                    vadrb = pop ? cStk.qa
+                        : (etime || call) && !endop ? sCwA.qb + (cStk.qb >> 16)
+                        : (!etime && !call) || endop ? (sCwA.qa & 0xffff) + (cStk.qb >> 16) : 0;
 
+                    // address calculation for cwds
+                    sadra = (UInt16)(!etime && !endop ? (cStk.qb & 0xffff) == 0 ? 2 : cStk.qb + 1
+                        : etime ? (cmet || call && endop && !rtn) ? sCwA.qb
+                        : (endop || push) ? call ? 0 : (cStk.qb + 1) : 0 : cStk.qb + 1);
+                    sadrb = (UInt16)(etime && endop || push && !call || !etime && pway ? 0 : cStk.qb + 1);
 
-                        fmt = String.Format("cycle = {0} {1}{2}{3}{4}{5}{6} Op1 = {7}; {8} Op2 = {9}; Alu = {10} {11} {12}"
-                         , cycle, (Parser.ucdEnum)(sCwA.qb & 0xfff0), (tjmp ? ",tna " : ""), (fjmp ? ",fna " : "") // 0, 1, 2, 3
-                         , (gtr ? ",gtr " : ""), (eql ? ",eql " : ""), (less ? ",less" : "") // 4, 5, 6
-                         , vbls.qa, (Parser.ucdEnum)((sCwA.qb >> 16) & 0x01f), vbls.qb, Alu.qa// 7, 8, 9
-                         , wrtVa ? (("; wrt " + Alu.qa + " to ") + ((pway && !call) ? (int)vadra < cV.Count ? cV[(int)vadra].name : "vbls[" + vadra + "]" : "TOS")) : ""
-                         //                                                                  ----------------------------------------------------
-                         //                                          --------------------------------------------------------------------------- 
-                         // ------------------------------------------------------------------------------------------------------------------------
-                         , cmet ? " cmet " : ""); //
+                    // visualize cycle activity
+                    fmt = String.Format("cycle = {0} {1}{2}{3}{4}{5}{6} Op1 = {7}; {8} Op2 = {9}; Alu = {10} {11} {12}"
+                     , cycle, (Parser.ucdEnum)(sCwA.qb & 0xfff0), (tjmp ? ",tna " : ""), (fjmp ? ",fna " : "") // 0, 1, 2, 3
+                     , (gtr ? ",gtr " : ""), (eql ? ",eql " : ""), (less ? ",less" : "") // 4, 5, 6
+                     , vbls.qa, (Parser.ucdEnum)((sCwA.qb >> 16) & 0x01f), vbls.qb, Alu.qa// 7, 8, 9
+                     , wrtVa ? (("; wrt " + Alu.qa + " to ") + ((pway && !call) ? (int)vadra < cV.Count ? cV[(int)vadra].name : "vbls[" + vadra + "]" : "TOS")) : ""
+                     //                                                                  ----------------------------------------------------
+                     //                                          --------------------------------------------------------------------------- 
+                     // ------------------------------------------------------------------------------------------------------------------------
+                     , cmet ? " cmet " : ""); //
                         lB1.Add(fmt);
                         if (lB1.Count >= 100)
                             return;
@@ -212,6 +173,8 @@ namespace CEngine16
                         // caller pushes args, uses caller base to get args, pushes parms to stk
                         // call || push for first arg push call stk stk ct and base;  then push at endop new base and cwCt
                         // at endop stkCt is new base, fn.cwix is new cwCt
+
+                        // look at controls
                         nxtV(etime, endop, pway, tjmp, fjmp, gtr, eql, less, push, pop, call, rtn);
 
                         //   cStk.qa [callPtr][base]   cStk.qb [stkCt][cwCt]
@@ -244,18 +207,23 @@ namespace CEngine16
                         //cStk.dina = callPtr << 16 | (UInt16)(push || (call && !rtn) ? cStk.qa - 1 : pop ? cStk.qa + 1 : cStk.qa);
                         //cStk.dinb = call && endop && !rtn ? ((cStk.qa) << 16) | (UInt16)(sCwA.qb) : ((cStk.qb >> 16) << 16)
                         //    | (UInt16)((cStk.qb == 0 ? 2 : cmet ? sCwA.qb : cStk.qb + 1));
+
+                    // new values for variables memory
                         vbls.dina = Alu.qa;
                         vbls.adra = (UInt16)vadra;
                         vbls.adrb = (UInt16)vadrb;
                         vbls.wrena = wrtVa ? true : false;
                         if (wrtVa)
                         { }
+                   // two step "clocking" emulates hardware parallelism
                         sCwA.clka();
                         sCwA.clkb();
                         vbls.clka();
                         vbls.clkb();
                         if (sCwA.qa == 0xffffffff || sCwA.qb == 0xffffffff)
+                        // end of of uCwds 
                             return;
+                    // two step clock cStk to next, target, call, or return
                         cStk.clka();
                         cStk.clkb();
                         cycle++;

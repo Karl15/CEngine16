@@ -15,11 +15,17 @@ namespace CEngine16
     {
         String fPath;
         String dPath;
-        Parser sP = new Parser();
-        CEngine vp = new CEngine();
+        Parser parser = new Parser();
+        CEngine cengine = new CEngine();
         public Form1()
         {
             InitializeComponent();
+        }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            openFileDialog1.ShowDialog(); // To select the source code file
+            // .txt or .c containing standard C code main(){} function.  
         }
 
         private void openFileDialog1_FileOk(object sender, CancelEventArgs e)
@@ -27,35 +33,26 @@ namespace CEngine16
 
             fPath = openFileDialog1.FileName;
             dPath = Path.GetDirectoryName(fPath);
-            sP.cParse(fPath, listBox1, vp);
-            //fPath = openFileDialog1.FileName;
-            //dPath = Path.GetDirectoryName(fPath);
-            //   vp.ex1(0,0,0);
-            //vp.lB1 = listBox1;
-            //vp.lB2 = listBox2;
-            //vp.lB3 = listBox3;
-            //listBox1.Hide();
-            //vp.lB2.Items.Clear();
-            //listBox3.Hide();
-            //sP.cParse(fPath, listBox1, vp);
-            //log = new FileStream("logOut.txt", FileMode.OpenOrCreate);
-            //lwrt = new StreamWriter(log);
-            //foreach (string s in listBox1.Items)
-            //{
-            //    lwrt.WriteLine(s);
-            //}
-            //lwrt.Flush();
-            //log.Close();
-            //vp.ipl(listBox1, sP.cas, sP.ccs, sP.cvbls);
-            //sP.memInit();
-            //listBox2.Show();
-            // button3.Show();
+        /* Syntax tree will be used instead of Parser 
+         * to List<uint> uCwds and List<Cvbl> cvbls
+        */ 
+            // Parser will open source, parse, and execute generated 
+            parser.begin(fPath, listBox1, cengine);
+       /*
+        * List<String> listBox1 formatted Strings show cycle by cycle execution
+        * after ipl() which calls the execution method after loading memories
+        */
+            cengine.ipl(listBox1, parser.uCwds, parser.cvbls);
+            FileStream log = new FileStream("logOut.txt", FileMode.OpenOrCreate);
+            StreamWriter lwrt = new StreamWriter(log);
+            foreach (string s in listBox1.Items)
+            {
+                lwrt.WriteLine(s);
+            }
+            lwrt.Flush();
+            log.Close();
             openFileDialog1.Dispose();
         }
 
-        private void Form1_Load(object sender, EventArgs e)
-        {
-            openFileDialog1.ShowDialog();
-        }
     }
 }
